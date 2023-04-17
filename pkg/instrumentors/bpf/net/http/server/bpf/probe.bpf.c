@@ -15,12 +15,16 @@
 #include "arguments.h"
 #include "span_context.h"
 #include "go_context.h"
+#include "go_types.h"
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
 #define PATH_MAX_LEN 100
 #define METHOD_MAX_LEN 6 // Longer method: DELETE
 #define MAX_CONCURRENT 50
+#define MAX_HEADERS 20
+#define W3C_KEY_LENGTH 11
+#define W3C_VAL_LENGTH 55
 
 struct http_request_t
 {
@@ -29,6 +33,7 @@ struct http_request_t
     char method[METHOD_MAX_LEN];
     char path[PATH_MAX_LEN];
     struct span_context sc;
+    struct span_context psc;
 };
 
 // map key: pointer to the goroutine that handles the request
@@ -45,10 +50,18 @@ struct
     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
 } events SEC(".maps");
 
+struct header_field
+{
+    struct go_string name;
+    struct go_string value;
+    bool sensitive;
+};
+
 // Injected in init
 volatile const u64 method_ptr_pos;
 volatile const u64 url_ptr_pos;
 volatile const u64 path_ptr_pos;
+volatile const u64 header_ptr_pos;
 
 // This instrumentation attaches uprobe to the following function:
 // func (mux *ServeMux) ServeHTTP(w ResponseWriter, r *Request)
@@ -82,8 +95,42 @@ int uprobe_ServerMux_ServeHTTP(struct pt_regs *ctx)
     path_size = path_size < path_len ? path_size : path_len;
     bpf_probe_read(&httpReq.path, path_size, path_ptr);
 
+    // get headers from request
+    void *header_ptr = 0;
+    bpf_probe_read(&header_ptr, sizeof(header_ptr), (void *)(req_ptr + header_ptr_pos));
+    struct go_slice header_fields = {};
+    bpf_probe_read(&header_fields, sizeof(header_fields), (void *)(req_ptr + header_ptr_pos));
+    char key[11] = "traceparent";
+    for (s32 i = 0; i < header_fields.len && i < MAX_HEADERS; i++)
+    {
+        struct header_field hf = {};
+        bpf_probe_read(&hf, sizeof(hf), (void *)(header_fields.array + (i * sizeof(hf))));
+        if (hf.name.len == W3C_KEY_LENGTH && hf.value.len == W3C_VAL_LENGTH)
+        {
+            char current_key[W3C_KEY_LENGTH];
+            bpf_probe_read(current_key, sizeof(current_key), hf.name.str);
+            if (current_key == key)
+            {
+                char val[W3C_VAL_LENGTH];
+                bpf_probe_read(val, W3C_VAL_LENGTH, hf.value.str);
+                w3c_string_to_span_context(val, &httpReq.psc);
+            }
+        }
+    }
+
     // Get goroutine pointer
     void *goroutine = get_goroutine_address(ctx);
+
+    // Setup span context
+    if (&httpReq.psc != NULL)
+    {
+        copy_byte_arrays(httpReq.psc.TraceID, httpReq.sc.TraceID, TRACE_ID_SIZE);
+        generate_random_bytes(httpReq.sc.SpanID, SPAN_ID_SIZE);
+    }
+    else
+    {
+        httpReq.sc = generate_span_context();
+    }
 
     // Write event
     httpReq.sc = generate_span_context();

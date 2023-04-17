@@ -55,6 +55,10 @@ func main() {
 				Field:      "ctx",
 			},
 			{
+				StructName: "net/http.Request",
+				Field:      "Header",
+			},
+			{
 				StructName: "net/url.URL",
 				Field:      "Path",
 			},
