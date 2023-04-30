@@ -1,0 +1,110 @@
+##################################################################################################
+# namespace
+##################################################################################################
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: foobar
+---
+##################################################################################################
+# foobar-app services
+##################################################################################################
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: foobar-app
+  namespace: foobar
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: foobar-app
+  namespace: foobar
+  labels:
+    app: foobar-app
+    service: foobar-app
+    app.kubernetes.io/name: foobar-app
+spec:
+  selector:
+    app: foobar-app
+  ports:
+    - name: http
+      port: 6001
+      targetPort: 6001
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: foobar-app
+  namespace: foobar
+  labels:
+    app: foobar-app
+    app.kubernetes.io/name: foobar-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: foobar-app
+  template:
+    metadata:
+      labels:
+        app: foobar-app
+    spec:
+      serviceAccountName: foobar-app
+      terminationGracePeriodSeconds: 0
+      containers:
+        - name: foobar-app
+          image: foobar-app:local
+          ports:
+            - containerPort: 6001
+              name: http
+---
+##################################################################################################
+# foobar-app instrumentation
+##################################################################################################
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: foobar-app
+  namespace: foobar
+  labels:
+    app: foobar-app
+    app.kubernetes.io/name: foobar-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: foobar-app
+  template:
+    metadata:
+      labels:
+        app: foobar-app
+    spec:
+      shareProcessNamespace: true
+      securityContext: { }
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: foobar-app
+          image: foobar-app:local
+          ports:
+            - containerPort: 6001
+              name: http
+        - name: foobar-app-instrumentation
+          image: otel-go-agent:local
+          env:
+            - name: OTEL_GO_AUTO_TARGET_EXE
+              value: /app/foobar-service
+#              value: /app
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector:4317
+            - name: OTEL_SERVICE_NAME
+              value: foobar-app-auto
+            - name: OTEL_PROPAGATORS
+              value: "tracecontext,baggage"
+          securityContext:
+            runAsUser: 0
+            capabilities:
+              add:
+                - SYS_PTRACE
+            privileged: true

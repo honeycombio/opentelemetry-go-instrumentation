@@ -1,0 +1,10 @@
+version: "2.4"
+
+services:
+  foobar:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    image: foobar-app:local
+    ports:
+      - 6001:6001
