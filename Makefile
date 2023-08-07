@@ -11,6 +11,7 @@ OTEL_GO_MOD_DIRS := $(filter-out $(TOOLS_MOD_DIR), $(ALL_GO_MOD_DIRS))
 # Build the list of include directories to compile the bpf program
 BPF_INCLUDE += -I${REPODIR}/bpf/headers
 BPF_INCLUDE += -I${REPODIR}/bpf/headers/libbpf
+BPF_PROBES := ${REPODIR}/bpf
 
 .DEFAULT_GOAL := precommit
 
@@ -49,6 +50,7 @@ test/%:
 
 .PHONY: generate
 generate: export CFLAGS := $(BPF_INCLUDE)
+generate: export BPF_PROBES := $(BPF_PROBES)
 generate: go-mod-tidy
 generate:
 	go generate ./...
