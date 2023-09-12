@@ -8,6 +8,8 @@ OpenTelemetry Go Automatic Instrumentation adheres to [Semantic Versioning](http
 
 ## [Unreleased]
 
+## [v0.3.0-alhpa] - 2023-09-12
+
 ### Fixed
 
 - Fix context propagation across different goroutines. ([#118](https://github.com/open-telemetry/opentelemetry-go-instrumentation/pull/118))
